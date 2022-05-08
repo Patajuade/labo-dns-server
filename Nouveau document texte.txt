@@ -1,0 +1,154 @@
+
+moi
+vm : 10.11.1.143
+10.11.1.140
+ileana
+vm : 10.11.1.126
+10.11.1.31
+_____________________________________________________________________
+ICMP
+	iptables -A OUTPUT --source 10.11.1.143 -p TCP --sport 22 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 80 -j ACCEPT	
+	iptables -t filter -A OUTPUT -p TCP --dport 53 -j ACCEPT	
+	iptables -t filter -A OUTPUT -p UDP --dport 53 -j ACCEPT	
+	iptables -t filter -A OUTPUT -p TCP --sport 53 -j ACCEPT	
+	iptables -t filter -A OUTPUT -p UDP --sport 53 -j ACCEPT	
+	iptables -t filter -A OUTPUT -p TCP --dport 443 -j ACCEPT	
+	iptables -t filter -A OUTPUT -p ICMP --icmp-type 0 -j DROP 	
+	iptables -t filter -A OUTPUT -p ICMP -j ACCEPT				
+	iptables -A OUTPUT -o lo -j ACCEPT
+	
+	iptables -t filter -A INPUT -p TCP --sport 80 -j ACCEPT			
+	iptables -t filter -A INPUT -p TCP --sport 443 -j ACCEPT		
+	iptables -t filter -A INPUT -p TCP --sport 53 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --dport 53 -j ACCEPT			
+	iptables -t filter -A INPUT -p UDP --sport 53 -j ACCEPT			
+	iptables -A INPUT --source 10.11.1.31 -p tcp --dport 22 -j ACCEPT	
+	iptables -A INPUT --source 10.11.1.140 -p tcp --dport 22 -j ACCEPT	
+	iptables -t filter -A INPUT -p TCP --dport 53 -j ACCEPT			
+	iptables -t filter -A INPUT -p ICMP -j ACCEPT				
+	iptables -A INPUT -i lo -j ACCEPT
+	iptables -A INPUT -p tcp --dport 22 -j DROP
+
+iptables -L -v
+
+_____________________________________________________________________
+connection SSH
+	ssh user1u@10.11.1.126
+	ssh manonuser@10.11.1.143
+
+_____________________________________________________________________
+persistance
+	/sbin/iptables-save
+	apt-get install iptables-persistent
+	iptables-save > /etc/iptables/rules.v4
+
+_____________________________________________________________________
+Zone
+	cd /etc/bind/
+	nano named.conf.local 
+	zone "manon.local"{
+		type master;
+		file "/var/cache/bind/db.manon.local";
+	};
+
+	zone "1.1.10.in-addr.arpa" {
+    		type master;
+    		notify no;
+    		file "/var/cache/bind/db.0";
+	};
+
+10.11.1.143
+-> 1.11.10
+_____________________________________________________________________
+Enregistrements
+
+	nano db.manon.local
+
+;
+; BIND data file for local loopback interface
+;
+$TTL    3600
+@       IN      SOA     ns1.manon.local. root.manon.local. (
+                         2022030701         ; Serial
+                         86400         ; Refresh
+                         7200         ; Retry
+                         3600000        ; Expire
+                         86400 )       ; Negative Cache TTL
+;
+
+;Name Server Information
+@       IN      NS      ns1
+@       IN      NS      ns2
+
+;IP address of Name Server
+ns1     IN      A       10.11.1.143
+ns2     IN      A       10.11.1.126
+
+;Mail Exchanger
+@	IN     MX   143   mail
+
+;A – Record HostName To IP Address
+www     IN       A      10.11.1.143
+mail    IN       A      10.11.1.143
+
+
+
+
+tests :
+	named-checkconf		//pour les erreurs de syntaxe, si ça renvoie rien c'est que c'est ok
+	systemctl restart bind9		(il y a aussi start,stop,reload,status)
+	systemctl status bind9
+	dig -x 10.11.1.143 	//pour check le bon fct du serveur dns
+	tail /var/log/syslog 	//check les messages systeme
+	nslookup manon.local localhost
+_____________________________________________________________________
+
+zone esclave
+
+nano /etc/bind/named.conf.local
+zone "slave.manon.local" {
+    type slave;
+    masters { 10.11.1.126; };
+    file "/var/cache/bind/db.slave.manon.local";
+};
+
+_____________________________________________________________________
+
+transferts de zone
+
+dans la zone manon.local:
+	notify yes;
+	allow-transfer  { 10.11.1.126; }; //Allow Transfer of zone from the master server
+	also-notify { 10.11.1.126; }; //Notify slave for zone changes
+
+_____________________________________________________________________
+
+nano named.conf.options
+allow-recursion { 10.11.1.126/16; } ;
+allow-query { IP-list };		//pour les requêtes itératives mais par défaut sa valeur est any du 					coup je pense pas qu'on soit obligés de le mettre
+mettre allow-transfer ici aussi ?
+
+
+//////////////////////////
+//changement dans options ?
+	nano named.conf.options
+	listen-on {any;};
+	service bind9 restart
+/////////////////////////
+
+test recursif
+ls manon.local
+nslookup www.manon.local
+
+tests :
+	named-checkconf		//pour les erreurs de syntaxe, si ça renvoie rien c'est que c'est ok
+	systemctl restart bind9		(il y a aussi start,stop,reload,status)
+	systemctl status bind9
+	dig -x 10.11.1.143 	//pour check le bon fct du serveur dns
+	tail /var/log/syslog 	//check les messages systeme
+	nslookup manon.local localhost
+
+///
+pour autoriser le slave en écriture chmod 775 ./slave/
+chown :bind

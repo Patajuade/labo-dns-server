@@ -1,0 +1,655 @@
+_____________________________
+LABO 1
+_____________________________
+********************************************************************
+- vmware workstation
+- 1 interface NAT
+- 1 interface bridge
+- installation ubuntu server
+- Installation BIND9 -> crrer un domaine notrenom.local
+			-> creer un record A pointant sur notre IP
+-> outils nslookup, dig
+
+Mecanismes de protection :
+- mise en place d'un firewall -> IPtable
+
+debian 11
+login : manonuser HotCheetos666
+_____________________________
+
+root => admin
+manon => single user
+sda => a=n° disque (sdb,sdc..)
+puTTY -> entrer les infos ip de la commande ip a dans putty
+/ => sommet d'arborescence
+editeur vi
+editeur nano
+_____________________________
+Commandes :
+su = superUser
+sudo = executer en tant que super user
+ip a					//Montre les adresses ip des interfaces de la machine
+
+une fois sur putty :
+su -					//Passer en admin
+apt-get update				//update la liste des packages et versions
+apt-get upgrade				//upgrade les versions des tools installés
+apt-cache search bind9
+apt-cache search bind9 | more
+apt-get install bind9
+cd /etc/				//Change directory -> etc
+ls					//Montre le contenu du directory
+ls -al
+ls -al | more
+cd bind
+ls -al
+cat named.conf				//affiche le contenu du fichier
+head -n 5 named.conf			//5 premières lignes
+nano named.conf				//edit le fichier avec nano
+nano named.conf.local 
+nano named.conf.defautzone
+cd /var/cache/bind/ 	(!espace après cd!) 
+ls
+touch wilfart.local.zone		//crée un nouveau fichier
+cd /etc/bind/
+nano named.conf.local 
+zone "wilfart.local"{
+	type master;
+	file "/var/cache/bind/wilfart.local.zone";	//normalement tout se fait dans etc/bind..
+};
+systemctl restart bind9		(il y a aussi start,stop,reload,status)
+systemctl status bind9
+q	
+ls
+nano named.conf.defaut-zones
+nano db.local		(le premier point de l'adresse mail de contact on doit le remplacer par un @)
+shutdown -h now
+
+ajouter une interface bridgée avec add... cocher bridge
+ip a	(regarder n°ens)
+cd /etc/network
+nano interfaces
+allow-hotplug ens36
+iface ens36 inet dhcp
+
+_____________________________
+Bind9 :
+	-> configurer
+	-> ajouter une zone
+	-> définir le contenu de la zone
+=> requêtes iteratives
+=> requêtes recursives
+(aller voir théorie)
+
+fichier named.conf
+	-> cat
+	-> more
+	-> head tail
+On doit rien mofifier dans named.conf, on doit le faire dans named.conf.local
+
+Fichier /etc/bind/named.conf : Ce fichier est le fichier de configuration principal du serveur DNS.
+Fichier /etc/bind/named.conf.default-zones : zones par défaut
+Fichier /etc/bind/named.conf.options : Ce fichier contient l'ensemble des options de configuration du serveur DNS.
+Fichier /etc/bind/named.conf.local : Ce fichier contient la configuration locale du serveur DNS, on y déclare les zones associées au domaine.
+Les fichiers dans var/cache/bind/ : RR pour la résolution de noms (fichier db.example.com)
+
+********************************************************************
+séance2
+
+Protéger 
+/!\ la sécurité, c'est sur toutes les couches
+
+MTU = maximum transmission unit
+DMZ = Une zone démilitarisée, ou DMZ est un sous-réseau séparé du réseau local et isolé de celui-ci d'Internet par un pare-feu. Ce sous-réseau contient les machines étant susceptibles d'être accédées depuis Internet, et qui n'ont pas besoin d'accéder au réseau local.
+
+iptables = outil de pare-feu intégré permettant de filtrer les paquets et les NAT
+
+ICMP = couche 3 -> network. véhiculer des messages de contrôle et d’erreur. types de messages avec codes. Utilisé par les protocoles des couches supérieures pour savoir si y'a une couille dans le potage
+
+Config firewall
+	->ip source	ip destination
+	->port source	port destination
+	->TCP/UDP	TCP/UDP
+
+Deviner les machines sur un réseau : scanner de réseau puis on ping
+ARP = faire le lien entre une adresse IP d'une carte réseau et une adresse matérielle dite adresse MAC. Plus précisément, son but est, à partir d'une adresse IP connue d'une machine, obtenir son adresse MAC et ainsi pouvoir envoyer notre trame
+
+TCP -> ex port 80 pour regarder les hôtes connectés sur un site internet
+
+se connecter avec une machine à distance debian -> icmp, ssh(fail2ban), dns(udp/tcp pour les transferts de zone)
+
+Firewall statefull : pare-feu qui garde en mémoire l'état de connexions réseau qui le traversent
+
+DLP = data loss prevention -> est une stratégie visant à empêcher les utilisateurs d'envoyer des informations sensibles ou critiques en dehors du réseau de l'entreprise.
+
+iptable c'est pas du statefull
+
+ACL = liste de contrôle d'accès. une liste des adresses et ports autorisés ou interdits par un pare-feu.
+
+_________________________________________
+
+- iptables 	-> toutes sorties sont autorisées
+		-> Limites sur les entrées (seul nous et notre voisin a l'autorisation d'accéder à notre environement ssh) : 	
+		filtres -> tout est bloqué
+			-> ssh accepté si l'adresse ipsource est notre voisin ou la notre
+
+- ICMP -> autoriser tout le trafic ICMP à l'exception de ICMP-ECHO (soit bloquer la réponse, soit la requête)
+_________________________________________
+Commandes :
+_________________________________________
+su-
+ip a
+ip a show ens36
+iptables -L		//voir les règles déjà configurées
+_________________________________________
+Dans putty : 
+_________________________________________
+Règles par défaut
+_________________________________________
+su -
+/sbin # apt-cache search iptables | more
+apt-get install iptables
+cd /sbin
+./iptables -t filter -L
+iptables -P INPUT DROP		//Putty marche plus car on acoupé la branche sur laquelle on était
+iptables -P INPUT ACCEPT	//Pour que ça refonctionne, écrire dans la VM, relancer putty
+
+iptables -t filter -A INPUT -p TCP --dport 22 -j ACCEPT
+iptables -t filter -A OUTPUT -p TCP --sport 22 -j ACCEPT
+
+iptables -t filter -A INPUT -j DROP
+iptables -t filter -A OUTPUT -j DROP
+iptables -t filter -L
+
+SSH, ICMP -> Bloquer echo reply
+
+Structure d'un iptables : iptables -A <chain> -i <interface> -p <protocol (tcp/udp) > -s <source> --dport <port no.>  -j <target>
+-A = append - alerte iptables qu'on ajoute de nouvelles règles à la chaine
+-i (interface) — the network interface whose traffic you want to filter, such as eth0, lo, ppp0, etc.
+-p (protocol) — the network protocol where your filtering process takes place. It can be either tcp, udp, udplite, icmp, sctp, icmpv6, and so on. Alternatively, you can type all to choose every protocol.
+-s (source) — the address from which traffic comes from. You can add a hostname or IP address.
+–dport (destination port) — the destination port number of a protocol, such as 22 (SSH), 443 (https), etc.
+-j (target) — the target name (ACCEPT, DROP, RETURN). You need to insert this every time you make a new rule.
+_________________________________________
+Autoriser SSH
+_________________________________________
+cd /etc/ssh				//On doit pas faire, juste pour info
+nano sshd_config			//modifier les ports par défaut, etc...
+
+iptables -A INPUT -i lo -j ACCEPT	//interfaces loopback
+iptables -A OUTPUT -o lo -j ACCEPT
+
+
+iptables -t filter -A INPUT -p TCP --dport 22 -j ACCEPT 	//Autoriser les échanges sur le port 22 en entrée
+iptables -t filter -A OUTPUT -p TCP --sport 22 -j ACCEPT 	//Autoriser les échanges sur le port 22 en sortie
+_________________________________________
+Trafic HTTP sortant et entrant
+_________________________________________
+iptables -t filter -A OUTPUT -o ens33 -p tcp --dport 80  -j ACCEPT
+iptables -t filter -A INPUT  -i ens33 -p tcp --sport 80  -j ACCEPT
+
+__________________________________________
+savoir bloquer les echo reply (echo reply = type 8 dans icmp)
+__________________________________________
+ iptables -A INPUT --proto icmp -j DROP 
+ iptables -L -n -v 				//voir la règle créée
+// maintenant on peut ping un site WEB voir si on a une réponse : on en aura pas puisqu'on a bloqué les messages icmp
+
+requêtes iteratives recursives
+autoriser uniquement pour les requêtes iteratives des machines de notre réseau
+SOA NS A MX WWW
+cofigurer le fichier de zone
+
+********************************************************************
+séance 3
+
+
+_______________________________________________________________________
+TCP UDP
+ex : DNS
+
+source 			destination
+ip2	ports		ip1	ports
+?	aléatoire	fixe	fixe (53)
+
+question : n'importe qui sur mon port 53 vers mon ip
+réponse : mon ip sur le port 53 vers n'importe qui
+
+_______________________________________________________________________
+Cas de figure où on autorise tout le monde :
+
+chaines output
+iptables -t filter -A OUTPUT -p TCP --sport 22 -j ACCEPT
+iptables -t filter -A OUTPUT -p TCP --dport 80 -j ACCEPT
+iptables -t filter -A OUTPUT -p TCP --dport 53 -j ACCEPT
+iptables -t filter -A OUTPUT -p UDP --dport 53 -j ACCEPT
+iptables -t filter -A OUTPUT -p TCP --sport 53 -j ACCEPT
+iptables -t filter -A OUTPUT -p UDP --sport 53 -j ACCEPT
+iptables -t filter -A OUTPUT -p TCP --dport 443 -j ACCEPT
+iptables -t filter -A OUTPUT -p ICMP --icmp-type 0 -j DROP 	//on bloque l'echo reply
+iptables -t filter -A OUTPUT -p ICMP -j ACCEPT			//on autorise le reste des réponses
+iptables -t filter -A OUTPUT -j DROP
+
+chaines input
+iptables -t filter -A INPUT -p TCP --sport 80 -j ACCEPT
+iptables -t filter -A INPUT -p TCP --sport 443 -j ACCEPT
+iptables -t filter -A INPUT -p TCP --sport 53 -j ACCEPT
+iptables -t filter -A INPUT -p UDP --sport 53 -j ACCEPT
+iptables -t filter -A INPUT -p TCP --dport 22 -j ACCEPT
+iptables -t filter -A INPUT -p TCP --dport 53 -j ACCEPT
+iptables -t filter -A INPUT -p ICMP -j ACCEPT
+iptables -t filter -A INPUT -j DROP
+
+_______________________________________________________________________
+Nous on veut autoriser 2 IP : Celle de notre windows et celle de la voisine
+instaurer la permanence (-> sauvegarder les settings)
+faire en sorte qu'iptables va récupérer dans un fichier les infos
+ajouter l'interface de gestion du loopback
+DNS : zone nom.local
+	-> fichier de zone
+		-> implémenter SOA (chercher les valeurs à mettre dedans sur internet)
+		-> NS
+		-> MX -> nom de machine hypothétique qui gèrerait les serveurs MX
+		-> A
+		-> www, ftp
+
+travailler avec nslookup
+Requêtes itératives, requêtes récursives
+-> bloquer les requêtes récursives
+_______________________________________________________________________
+_______________________________________________________________________
+
+	iptables -L -n -v
+
+Commandes de base où on accepte tout partout :
+
+	iptables -t filter -A OUTPUT -p TCP --sport 22 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 80 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p UDP --dport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --sport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p UDP --sport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 443 -j ACCEPT
+	iptables -t filter -A OUTPUT -p ICMP --icmp-type 0 -j DROP 
+	iptables -t filter -A OUTPUT -p ICMP -j ACCEPT			
+	iptables -t filter -A OUTPUT -j DROP
+
+	iptables -t filter -A INPUT -p TCP --sport 80 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --sport 443 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --sport 53 -j ACCEPT
+	iptables -t filter -A INPUT -p UDP --sport 53 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --dport 22 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --dport 53 -j ACCEPT
+	iptables -t filter -A INPUT -p ICMP -j ACCEPT
+	iptables -t filter -A INPUT -j DROP
+_______________________________________________________________________
+Pour autoriser ssh avec le voisin seulement
+	iptables -t filter -A INPUT -p TCP -s 10.11.1.147 -d 10.11.1.126 --dport 22 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP -s 10.11.1.126 -d 10.11.1.147 --dport 22 -j ACCEPT
+
+Faire pareil pour le output ?
+	=> pas besoin
+_______________________________________________________________________
+Rendre les règles iptables permanentes :
+	/sbin/iptables-save
+via iptables-persistent
+	apt-get install iptables-persistent
+	iptables-save > /etc/iptables/rules.v4
+
+_______________________________________________________________________
+loopback
+	iptables -A INPUT -i lo -j ACCEPT
+	iptables -A OUTPUT -o lo -j ACCEPT
+Permet d'autoriser le traffic sur le localhost
+localhost = interface logique de l'ordinateur local
+_______________________________________________________________________
+essayer de se co en ssh sur le voisin:
+	apt install openssh-client
+	ap install openssh-server
+
+	ssh $utilisateur@$hôte_distant
+	ssh voisin@ipvoisin
+
+ifdown
+
+	sudo iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+	sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+	sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+	iptables -L -v
+_______________________________________________________________________
+filtrer les packets depuis une source
+exemple dans le cas où la source est 192.168.1.3
+Pour accepter tous les packets :
+	sudo iptables -A INPUT -s 192.168.1.3 -j ACCEPT
+Pour refuser tous les packets :
+	sudo iptables -A INPUT -s 192.168.1.3 -j DROP
+
+Supprimer toutes les règles
+	iptables -F
+
+
+DNS
+ls
+touch manon.local.zone
+
+$TTL 1W 
+@IN SOA ns.helho.be. root.helho.be. (
+	92; serial
+	2D
+	4H
+	6W
+	20M )
+
+@ IN NS ns.helho.be. 
+@ IN NS ns.belnet.be. 
+
+@ IN MX 1 barracuda.helho.be. 
+@ IN MX 2 mail.helho.be. 
+
+@ IN TXT "v=spf1 mx ptr ip4:193.191.131.9 -all" 
+
+mail IN TXT "v=spf1 a -all" 
+barracuda IN TXT "v=spf1 a -all" 
+
+ns IN A 193.191.131.2 
+ns1 IN A 193.191.131.10 
+www IN A 193.191.131.8 
+
+pas oublier le point derriere les adresses 
+_______________________________________________________________________
+
+**********************************************************************
+entrainement exam labo1
+
+Collègue settings :
+copainuser	copain		192.168.0.16
+
+Labo1 settings :
+manonuser	HotCheetos666	192.168.0.15
+
+	En mode NAT, la VM utilise son propre réseau privé. Masque l'activité réseau de la VM en le faisant passer pour l'activité de l'OS hôte
+La VM est sur le même réseau que le PC Hôte.
+	Bridge : Sorte de switch virtuel, attribue une IP à la VM via un serveur DHCP
+	statefull = pare feu qui garde en mémoire l'état de connexions réseau qui le traversent. permet de détecter les intrusionssystemctl status bind9
+	BIND9 : serveur DNS
+	apt- permet d'installer, mettre à jour, retier, gérer les packages sur les distribs linux
+	Structure d'un iptables : iptables -A <chain> -i <interface> -p <protocol (tcp/udp) > -s <source> --dport <port no.>  -j <target>
+
+config iptables de façon suivante :
+
+____TESTS, voir version finale plus bas
+
+sur la machine Collègue
+	iptables -A OUTPUT --source 192.168.0.16 -p TCP --sport 22 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --sport 22 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 80 -j ACCEPT	//HTTP  sortant ok
+	iptables -t filter -A OUTPUT -p TCP --dport 53 -j ACCEPT	//requêtes DNS sortantes ok
+	iptables -t filter -A OUTPUT -p UDP --dport 53 -j ACCEPT	//requêtes DNS sortantes ok
+	iptables -t filter -A OUTPUT -p TCP --sport 53 -j ACCEPT	//requêtes DNS sortantes ok
+	iptables -t filter -A OUTPUT -p UDP --sport 53 -j ACCEPT	//requêtes DNS sortantes ok
+	iptables -t filter -A OUTPUT -p TCP --dport 443 -j ACCEPT	//HTTPS  sortant ok
+	iptables -t filter -A OUTPUT -p ICMP --icmp-type 0 -j DROP 	//bloquer les echo reply sortants
+	iptables -t filter -A OUTPUT -p ICMP -j ACCEPT		//autoriser les paquets ICMP sortants	
+	iptables -A OUTPUT -o lo -j ACCEPT
+	iptables -t filter -A OUTPUT -j DROP
+
+	iptables -t filter -A INPUT -p TCP --sport 80 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --sport 443 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --sport 53 -j ACCEPT			//requêtes DNS entrantes OK
+	iptables -t filter -A INPUT -p UDP --sport 53 -j ACCEPT			//requêtes DNS entrantes OK
+	iptables -A INPUT --source 192.168.0.15 -p tcp --dport 22 -j ACCEPT	//SSH provenant du voisin ok
+	iptables -A INPUT --source 192.168.0.18 -p tcp --dport 22 -j ACCEPT	//SSH provenant du pc ok
+	iptables -t filter -A INPUT -p TCP --dport 53 -j ACCEPT			//requêtes DNS entrantes OK
+	iptables -t filter -A INPUT -p ICMP -j ACCEPT			//accepter les paquets ICMP ext entrants
+	iptables -A INPUT -i lo -j ACCEPT
+	iptables -A INPUT -p tcp --dport 22 -j DROP				//drop le reste
+	
+	iptables -L -n -v
+
+sur la machine Labo1
+	iptables -t filter -A OUTPUT -p TCP --sport 22 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 80 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p UDP --dport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --sport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p UDP --sport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 443 -j ACCEPT
+	iptables -t filter -A OUTPUT -p ICMP --icmp-type 0 -j DROP 
+	iptables -t filter -A OUTPUT -p ICMP -j ACCEPT			
+	iptables -A OUTPUT -o lo -j ACCEPT
+	iptables -t filter -A OUTPUT -j DROP
+
+	iptables -t filter -A INPUT -p TCP --sport 80 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --sport 443 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --sport 53 -j ACCEPT		
+	iptables -t filter -A INPUT -p UDP --sport 53 -j ACCEPT
+	iptables -A INPUT --source 192.168.0.16 -p tcp --dport 22 -j ACCEPT
+	iptables -A INPUT --source 192.168.0.18 -p tcp --dport 22 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --dport 53 -j ACCEPT
+	iptables -t filter -A INPUT -p ICMP -j ACCEPT
+	iptables -A INPUT -i lo -j ACCEPT
+	iptables -A INPUT -p tcp --dport 22 -j DROP
+
+	iptables -L -n -v
+
+iptables -A INPUT --source 192.168.0.16 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT --source 192.168.0.18 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -j DROP
+
+iptables -A INPUT --source 192.168.0.15 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT --source 192.168.0.18 -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -j DROP
+
+____ règles ok :
+
+ileana
+	iptables -A OUTPUT --source 10.11.1.126 -p TCP --sport 22 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 80 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p UDP --dport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --sport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p UDP --sport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 443 -j ACCEPT
+	iptables -t filter -A OUTPUT -p ICMP --icmp-type 0 -j DROP 
+	iptables -t filter -A OUTPUT -p ICMP -j ACCEPT			
+	iptables -A OUTPUT -o lo -j ACCEPT
+	
+	iptables -t filter -A INPUT -p TCP --sport 80 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --sport 443 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --sport 53 -j ACCEPT		
+	iptables -t filter -A INPUT -p UDP --sport 53 -j ACCEPT
+	iptables -A INPUT --source 10.11.1.143 -p tcp --dport 22 -j ACCEPT
+	iptables -A INPUT --source 10.11.1.31 -p tcp --dport 22 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --dport 53 -j ACCEPT
+	iptables -t filter -A INPUT -p ICMP -j ACCEPT
+	iptables -A INPUT -i lo -j ACCEPT
+	iptables -A INPUT -p tcp --dport 22 -j DROP
+
+moi
+	iptables -A OUTPUT --source 10.11.1.143 -p TCP --sport 22 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 80 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p UDP --dport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --sport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p UDP --sport 53 -j ACCEPT
+	iptables -t filter -A OUTPUT -p TCP --dport 443 -j ACCEPT
+	iptables -t filter -A OUTPUT -p ICMP --icmp-type 0 -j DROP 
+	iptables -t filter -A OUTPUT -p ICMP -j ACCEPT			
+	iptables -A OUTPUT -o lo -j ACCEPT
+	
+	iptables -t filter -A INPUT -p TCP --sport 80 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --sport 443 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --sport 53 -j ACCEPT		
+	iptables -t filter -A INPUT -p UDP --sport 53 -j ACCEPT
+	iptables -A INPUT --source 10.11.1.31 -p tcp --dport 22 -j ACCEPT
+	iptables -A INPUT --source 10.11.1.140 -p tcp --dport 22 -j ACCEPT
+	iptables -t filter -A INPUT -p TCP --dport 53 -j ACCEPT
+	iptables -t filter -A INPUT -p ICMP -j ACCEPT
+	iptables -A INPUT -i lo -j ACCEPT
+	iptables -A INPUT -p tcp --dport 22 -j DROP
+_____________________
+DNS
+config pour bind9 est dans /etc/bind
+named.conf = fichier config principal
+/etc/bind/named.conf.local = fichier contenant toutes les infos du réseau concernant lee serveur et les zones locales
+/etc/bind/named.conf.default-zones = zones actives
+
+Par défaut, BIND est configuré pour servir localhost seulement. Toute requête provenant de l'extérieur du localhost seront rejetées. Du coup on va dire au serveur DNS d'écouter toutes les IP pour envoyer des requêtes au DNS depuis différents endroits (depuis le serveur, depuis un différent réseau,..)
+Pour cela, on va modifier named.conf.options :
+	nano named.conf.options
+	listen-on {any;};
+	service bind9 restart
+Maintenant bind écoute toutes les interfaces
+
+Déclarer une zone :
+	cd /etc/bind/
+	nano named.conf.local 
+	zone "manon.local"{
+		type master;
+		file "/etc/bind/db.manon.local";
+	};
+db.manon.local contient les records pour la zone
+
+Enregistrement de type A : cet enregistrement fait correspondre une adresse IPv4 à un hôte ou un nom de domaine.
+PTR : c'est simplement la résolution inverse (le contraire du type A).
+Enregistrement de type AAAA : cet enregistrement fait correspondre une adresse IPv6 à un hôte ou un nom de domaine.
+Enregistrement MX (Mail Exchange) : ce type d’enregistrements permet de définir les serveurs de messagerie pour le domaine. Ils doivent être pointés vers un enregistrement de type A.
+Enregistrement NS (Name Server) : ce sont les enregistrements des serveurs de noms DNS du domaine. Ils doivent être pointés vers un enregistrement de type A.
+
+	nano db.manon.local	//on crée le fichier
+
+;
+; BIND data file for local loopback interface
+;
+$TTL    604800
+@       IN      SOA     ns1.manon.local. root.manon.local. (
+                              2         ; Serial
+                         604800         ; Refresh
+                          86400         ; Retry
+                        2419200         ; Expire
+                         604800 )       ; Negative Cache TTL
+;
+
+@      IN      NS      localhost.
+@      IN      A       127.0.0.1
+@      IN      AAAA    ::1
+
+;Name Server Information
+@       IN      NS      ns1.manon.local
+
+;IP address of Name Server
+ns1     IN      A       192.168.0.15
+
+;Mail Exchanger
+manon.local.   IN     MX   15   mail.manon.local.
+
+;A – Record HostName To IP Address
+www     IN       A      192.168.0.100
+mail    IN       A      192.168.0.150
+
+/!\ REMARQUE : les chiffres somme sur l'enr MX doivent être = à l'id hôte (192.168.0.15 -> 15)
+Zone en association inverse : permet de convertir une IP en nom de domaine
+inverse de l'id réseau : 192.168.0 -> 0.168.192
+
+	nano /etc/bind/named.conf.local
+
+zone "0.168.192.in-addr.arpa" {
+    type master;
+    notify no;
+    file "/etc/bind/db.0";
+};
+
+	nano db.0	//création du fichier où mettre les records 
+
+;
+; BIND reverse data file for local loopback interface
+;
+$TTL  604800
+
+@    IN   SOA   manon.local. root.manon.local. (
+		2     		; Serial
+             	604800    	; Refresh
+            	86400     	; Retry
+            	2419200     	; Expire
+             	604800 )    	; Negative Cache TTL
+;
+;@   IN   NS   localhost.
+;1.0.0 IN   PTR   localhost.
+
+;Name Server Information
+@    IN   NS   ns1.manon.local.
+
+;Reverse lookup for Name Server
+15   IN   PTR  ns1.manon.local.
+
+;PTR Record IP address to HostName
+15   IN   PTR  www.manon.local.
+15   IN   PTR  mail.manon.local.
+
+# End of file
+
+/////////////////////////fichier de base au cas où/////////////////////////
+; BIND reverse data file for broadcast zone
+;
+$TTL    604800
+@       IN      SOA     localhost. root.localhost. (
+                              1         ; Serial
+                         604800         ; Refresh
+                          86400         ; Retry
+                        2419200         ; Expire
+                         604800 )       ; Negative Cache TTL
+;
+@       IN      NS      localhost.
+/////////////////////////////////////////////////////////////////////////////
+
+	named-checkconf		//pour les erreurs de syntaxe, si ça renvoie rien c'est que c'est ok
+	systemctl restart bind9		(il y a aussi start,stop,reload,status)
+	systemctl status bind9
+	dig -x 192.168.0.15 	//pour check le bon fct du serveur dns
+	tail /var/log/syslog 	//check les messages systeme
+	nslookup manon.local localhost
+
+_______________________________________________
+Ajouter une zone esclave sur votre serveur DNS de sorte d’héberger une copie de zone pour le serveur d’un de vos voisins de laboratoire et inversement. + seul votre voisin qui est « esclave » de votre zone soit autorisé à demander des transferts de zone.
+
+on doit ajouter allow-transfer et allow-notify dans le named.conf.local -> transferts de zone.
+/!\ on doit y mettre l'ip du serveur esclave
+
+	nano /etc/bind/named.conf.local
+dans la zone manon.local:
+	notify yes;
+	allow-transfer  { 192.168.0.16; }; //Allow Transfer of zone from the master server
+	also-notify { 192.168.0.16; }; //Notify slave for zone changes
+dans la zone inverse on fait pareil
+
+nano /etc/bind/named.conf.local
+zone "slave.manon.local" {
+    type slave;
+    masters { 192.168.0.15; };
+    file "/etc/bind/db.slave.manon.local";
+};
+
+aller bidouiller dans de fichier db.slave.manon.local ?
+
+///
+(sur le serveur slave :
+on crée une zone avec la ligne masters { 192.168.0.15; }; //Master Server IP
+pareil pour la zone reverse
+on crée les records..
+restard bind)
+///
+___________________________________________
+
+Autoriser les requêtes itératives de tout hôte externe et de n’autoriser les requêtes récursives que provenant de votre voisin de laboratoire via son adresse IP
+
+/etc/bind/named.conf.options
+nano named.conf.options
+dans les brackets options{} on écrit..
+allow-recursion { 192.168.1/24; } ;	//avec l'adresse du voisin à la place de l'ip là
+allow-query { IP-list };		//pour les requêtes itératives mais par défaut sa valeur est any du 					coup je pense pas qu'on soit obligés de le mettre
+
+on peut aussi mettre l'option allow-transfer { none; }; pour la question précédente ?
+
+ce qu'on met dans options ce sera des options globales qui toucheront toutes les zones
+
+mettre les files dans var/cache/bind

@@ -1,0 +1,46 @@
+su -
+ip a
+
+su -					//Passer en admin
+apt-get update				//update la liste des packages et versions
+apt-get upgrade				//upgrade les versions des tools installés
+apt-cache search bind9
+apt-cache search bind9 | more
+apt-get install bind9
+cd /etc/				//Change directory -> etc
+ls					//Montre le contenu du directory
+ls -al
+ls -al | more
+cd bind
+ls -al
+cat named.conf				//affiche le contenu du fichier
+head -n 5 named.conf			//5 premières lignes
+nano named.conf				//edit le fichier avec nano
+nano named.conf.local 
+nano named.conf.defautzone
+cd /var/cache/bind/ 			(!espace après cd!)
+ls
+touch wilfart.local.zone		//crée un nouveau fichier
+cd /etc/bind/
+nano named.conf.local 
+zone "wilfart.local"{
+	type master;
+	file "/var/cache/bind/wilfart.local.zone";
+};
+systemctl restart bind9		(il y a aussi start,stop,reload,status)
+systemctl status bind9
+q	
+ls
+nano named.conf.defaut-zones
+nano db.local		(le premier point de l'adresse mail de contact on doit le remplacer par un @)
+shutdown -h now
+
+ajouter une interface bridgée avec add... cocher bridge
+ip a	(regarder n°ens)
+cd /etc/network
+nano interfaces
+allow-hotplug ens36
+iface ens36 inet dhcp
+
+apt-get install iptables
+iptables -t filter -L
